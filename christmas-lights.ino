@@ -31,8 +31,15 @@
 #include <SPI.h>
 
 
+void clear_strand (void);
+void start_frame (void);
+void end_frame (void);
+void set_led(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness);
+
 // set pin 10 as the slave select for the digital pot:
 const int slaveSelectPin = 10;
+
+// make a frame buffer
 
 void setup() {
 	// set the slaveSelectPin as an output:
@@ -44,6 +51,42 @@ void setup() {
 	Serial.println ("init");
 }
 
+void
+clear_strand (void)
+{
+	int idx;
+
+	Serial.println ("clear");
+
+	start_frame ();
+
+	for (idx = 0; idx < 350; idx++) {
+		set_led (0, 0, 0, 0);
+	}
+
+	/* end_frame (); */
+}
+
+void
+start_frame (void)
+{
+	int idx;
+
+	for (idx = 0; idx <  4; idx++) {
+		SPI.transfer (0x00);
+	}
+}
+
+void
+end_frame (void)
+{
+	int idx;
+
+	for (idx = 0; idx < 4; idx++) {
+		SPI.transfer (0xff);
+	}
+}
+
 void set_led(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness = 31)
 {
 	SPI.transfer(0b11100000 | brightness);
@@ -52,51 +95,93 @@ void set_led(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness = 31)
 	SPI.transfer(red);
 }
 
+int
+hexval (int c)
+{
+	if (c >= '0' && c <= '9') {
+		return (c - '0');
+	} else if (c >= 'a' && c <= 'f') {
+		return (c - 'a' + 10);
+	} else if (c >= 'A' && c <= 'F') {
+		return (c - 'A' + 10);
+	} else {
+		return (0);
+	}
+}
+
+int acc = 0;
 
 void loop() {
 	char c;
+	char buf[100];
 
 	if (Serial.available ()) {
 		c = Serial.read ();
 
-		if (c == ' ') {
-			Serial.println ("frame");
-
-			/* SPI.transfer (0x00); */
-			/* SPI.transfer (0x85); */
-			/* SPI.transfer (0x00); */
-			/* SPI.transfer (0xff); */
-
-			/* /\* for (int idx = 0; idx < 3; idx++) { *\/ */
-			/* /\* 	SPI.transfer (0x00); *\/ */
-			/* /\* } *\/ */
-
-			/* /\* SPI.transfer (0b11111111); *\/ */
-			/* /\* SPI.transfer (0x00); *\/ */
-			/* /\* SPI.transfer (0xff); *\/ */
-			/* /\* SPI.transfer (0x00); *\/ */
-
-			/* /\* for (int idx = 0; idx < 3; idx++) { *\/ */
-			/* /\* 	SPI.transfer (0xff); *\/ */
-			/* /\* } *\/ */
-
-			if (0) {
-				SPI.transfer (0x51);
-			} else if (1) {
-				int idx;
-				for (idx = 0; idx < 4; idx++) {
-					SPI.transfer (0x00);
-				}
-
+		if (isxdigit (c)) {
+			acc = ((acc << 4) | hexval (c)) & 0xff;
+			Serial.println (buf);
+		} else {
+			switch (c) {
+			case '.':
+				sprintf (buf, "buffered: 0x%x", acc);
+				Serial.println (buf);
+				break;
+			case ' ':
+				sprintf (buf, "sending: 0x%x", acc);
+				Serial.println (buf);
+				SPI.transfer (acc);
+				acc = 0;
+				break;
+			case 'x':
+				clear_strand ();
+				break;
+			case '-':
+				start_frame ();
 				set_led (0x00, 0x00, 0x40, 0xf0);
 				set_led (0x00, 0x40, 0x00, 0xf0);
 				set_led (0x40, 0x00, 0x00, 0xf0);
+				set_led (0x40, 0x00, 0x00, 0xf0);
 
-				for (idx = 0; idx < 8; idx++) {
-					SPI.transfer (0xff);
-				}
+				end_frame ();
+				break;
 			}
 		}
+				
+		/* if (c == 'c') { */
+		/* 	clear_strand (); */
+		/* } else if (c == 'r') { */
+		/* 	red_strand (); */
+		/* } else if (c == ' ') { */
+		/* 	Serial.println ("frame"); */
+
+		/* 	if (0) { */
+		/* 		SPI.transfer (0x51); */
+		/* 	} else if (1) { */
+		/* 		int idx; */
+		/* 		start_frame (); */
+
+		/* 		set_led (0x00, 0x00, 0x40, 0xf0); */
+		/* 		set_led (0x00, 0x40, 0x00, 0xf0); */
+		/* 		set_led (0x40, 0x00, 0x00, 0xf0); */
+		/* 		set_led (0x40, 0x00, 0x00, 0xf0); */
+
+		/* 		/\* end_frame (); *\/ */
+		/* 		/\* for (idx = 0; idx < 12; idx++) { *\/ */
+		/* 		/\* 	SPI.transfer (0xff); *\/ */
+		/* 		/\* } *\/ */
+
+		/* 		SPI.transfer (0xe0); */
+		/* 		SPI.transfer (0x00); */
+		/* 		SPI.transfer (0x00); */
+		/* 		SPI.transfer (0xff); */
+
+		/* 		SPI.transfer (0xff); */
+		/* 		SPI.transfer (0xff); */
+		/* 		SPI.transfer (0xff); */
+		/* 		SPI.transfer (0xff); */
+		/* 	} */
+		/* } */
 	}
 
 
