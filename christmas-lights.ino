@@ -1,52 +1,23 @@
-/*
-  Digital Pot Control
-
-  This example controls an Analog Devices AD5206 digital potentiometer.
-  The AD5206 has 6 potentiometer channels. Each channel's pins are labeled
-  A - connect this to voltage
-  W - this is the pot's wiper, which changes when you set it
-  B - connect this to ground.
-
-  The AD5206 is SPI-compatible,and to command it, you send two bytes,
-  one with the channel number (0 - 5) and one with the resistance value for the
-  channel (0 - 255).
-
-  The circuit:
-  * All A pins  of AD5206 connected to +5V
-  * All B pins of AD5206 connected to ground
-  * An LED and a 220-ohm resisor in series connected from each W pin to ground
-  * CS - to digital pin 10  (SS pin)
-  * SDI - to digital pin 11 (MOSI pin)
-  * CLK - to digital pin 13 (SCK pin)
-
-  created 10 Aug 2010
-  by Tom Igoe
-
-  Thanks to Heather Dewey-Hagborg for the original tutorial, 2005
-
-*/
-
-
-// inslude the SPI library:
 #include <SPI.h>
 
+#define LED_COUNT 304
 
 void clear_strand (void);
 void start_frame (void);
 void end_frame (void);
-void set_led(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness);
+void setup_frame (void);
+void setup_cylon (void);
+void step_cylon (void);
+void push_led (unsigned long pixel);
+void set_led (uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness);
 
-// set pin 10 as the slave select for the digital pot:
-const int slaveSelectPin = 10;
-
-// make a frame buffer
-
-void setup() {
-	// set the slaveSelectPin as an output:
-	/* pinMode(slaveSelectPin, OUTPUT); */
-	// initialize SPI:
+void
+setup (void)
+{
+	setup_cylon ();
+	/* setup_frame (); */
 	SPI.begin();
-	SPI.beginTransaction (SPISettings (100000, MSBFIRST, SPI_MODE0));
+	/* SPI.beginTransaction (SPISettings (1000000, MSBFIRST, SPI_MODE0)); */
 	Serial.begin (9600);
 	Serial.println ("init");
 }
@@ -60,39 +31,27 @@ clear_strand (void)
 
 	start_frame ();
 
-	for (idx = 0; idx < 350; idx++) {
-		set_led (0, 0, 0, 0);
+	for (idx = 0; idx < LED_COUNT+2; idx++) {
+		push_led (0xe0000000);
 	}
-
-	/* end_frame (); */
 }
 
 void
 start_frame (void)
 {
-	int idx;
-
-	for (idx = 0; idx <  4; idx++) {
-		SPI.transfer (0x00);
-	}
+	SPI.transfer (0x00);
+	SPI.transfer (0x00);
+	SPI.transfer (0x00);
+	SPI.transfer (0x00);
 }
 
 void
 end_frame (void)
 {
-	int idx;
-
-	for (idx = 0; idx < 4; idx++) {
-		SPI.transfer (0xff);
-	}
-}
-
-void set_led(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness = 31)
-{
-	SPI.transfer(0b11100000 | brightness);
-	SPI.transfer(blue);
-	SPI.transfer(green);
-	SPI.transfer(red);
+	SPI.transfer (0xe0);
+	SPI.transfer (0x00);
+	SPI.transfer (0x00);
+	SPI.transfer (0x00);
 }
 
 int
@@ -111,122 +70,172 @@ hexval (int c)
 
 int acc = 0;
 
-void loop() {
+unsigned long frames[LED_COUNT+1];
+
+void
+setup_frame (void)
+{
+	int idx;
+
+	for (idx = 0; idx < LED_COUNT; idx++) {
+		switch (idx % 3) {
+		case 0:
+			frames[idx] = 0x400000f0;
+			break;
+		case 1:
+			frames[idx] = 0x004000f0;
+			break;
+		case 2:
+			frames[idx] = 0x000040f0;
+			break;
+		}
+	}
+
+	frames[idx] = 0;
+}
+
+int cylon_eye;
+int cylon_dir;
+
+void
+setup_cylon (void)
+{
+	int idx;
+
+	cylon_dir = 1;
+	cylon_eye = 0;
+
+	for (idx = 0; idx < LED_COUNT; idx++) {
+		if (idx == cylon_eye) {
+			frames[idx] = 0x400000f0;
+		} else {
+			frames[idx] = 0x000000e0;
+		}
+	}
+
+	frames[idx] = 0;
+}
+
+void
+step_cylon (void)
+{
+	char buf[100];
+
+	if (cylon_dir == 1) {
+		frames[cylon_eye] = 0x000000e0;
+		if (cylon_eye >= LED_COUNT-1) {
+			cylon_dir = -1;
+			cylon_eye = LED_COUNT - 2;
+		} else {
+			cylon_eye += 1;
+		}
+	} else {
+		frames[cylon_eye] = 0x000000e0;
+		if (cylon_eye <= 0) {
+			cylon_dir = 1;
+			cylon_eye = 1;
+		} else {
+			cylon_eye -= 1;
+		}
+	}
+
+	frames[cylon_eye] = 0x400000f0;
+}
+
+void
+push_led (unsigned long pixel)
+{
+	SPI.transfer (pixel & 0xff);
+	SPI.transfer ((pixel >> 8) & 0xff);
+	SPI.transfer ((pixel >> 16) & 0xff);
+	SPI.transfer ((pixel >> 24) & 0xff);
+}
+
+void
+write_frame (void)
+{
+	char buf[100];
+	int idx;
+
+	clear_strand ();
+
+	start_frame ();
+
+	for (idx = 0; frames[idx]; idx++) {
+		push_led (frames[idx]);
+	}
+
+	end_frame ();
+}
+
+void
+loop (void)
+{
 	char c;
 	char buf[100];
 
 	if (Serial.available ()) {
 		c = Serial.read ();
 
-		if (isxdigit (c)) {
-			acc = ((acc << 4) | hexval (c)) & 0xff;
-			Serial.println (buf);
-		} else {
-			switch (c) {
-			case '.':
-				sprintf (buf, "buffered: 0x%x", acc);
-				Serial.println (buf);
-				break;
-			case ' ':
-				sprintf (buf, "sending: 0x%x", acc);
-				Serial.println (buf);
-				SPI.transfer (acc);
-				acc = 0;
-				break;
-			case 'x':
-				clear_strand ();
-				break;
-			case '-':
-				start_frame ();
-				set_led (0x00, 0x00, 0x40, 0xf0);
-				set_led (0x00, 0x40, 0x00, 0xf0);
-				set_led (0x40, 0x00, 0x00, 0xf0);
-				set_led (0x40, 0x00, 0x00, 0xf0);
-
-				end_frame ();
-				break;
-			}
+		switch (c) {
+		case 'x':
+			clear_strand ();
+			break;
+		case 'n':
+			write_frame ();
+			break;
+		case 'c':
+			step_cylon ();
+			write_frame ();
+			break;
+		case 'z':
+			setup_frame ();
+			break;
+		case 'v':
+			setup_cylon ();
+			break;
 		}
-				
-		/* if (c == 'c') { */
-		/* 	clear_strand (); */
-		/* } else if (c == 'r') { */
-		/* 	red_strand (); */
-		/* } else if (c == ' ') { */
-		/* 	Serial.println ("frame"); */
 
-		/* 	if (0) { */
-		/* 		SPI.transfer (0x51); */
-		/* 	} else if (1) { */
-		/* 		int idx; */
+		/* if (isxdigit (c)) { */
+		/* 	acc = ((acc << 4) | hexval (c)) & 0xff; */
+		/* 	Serial.println (buf); */
+		/* } else { */
+		/* 	switch (c) { */
+		/* 	/\* case '.': *\/ */
+		/* 	/\* 	sprintf (buf, "buffered: 0x%x", acc); *\/ */
+		/* 	/\* 	Serial.println (buf); *\/ */
+		/* 	/\* 	break; *\/ */
+		/* 	/\* case ' ': *\/ */
+		/* 	/\* 	sprintf (buf, "sending: 0x%x", acc); *\/ */
+		/* 	/\* 	Serial.println (buf); *\/ */
+		/* 	/\* 	SPI.transfer (acc); *\/ */
+		/* 	/\* 	acc = 0; *\/ */
+		/* 	/\* 	break; *\/ */
+		/* 	case 'x': */
+		/* 		clear_strand (); */
+		/* 		break; */
+		/* 	case '-': */
 		/* 		start_frame (); */
-
 		/* 		set_led (0x00, 0x00, 0x40, 0xf0); */
 		/* 		set_led (0x00, 0x40, 0x00, 0xf0); */
 		/* 		set_led (0x40, 0x00, 0x00, 0xf0); */
 		/* 		set_led (0x40, 0x00, 0x00, 0xf0); */
 
-		/* 		/\* end_frame (); *\/ */
-		/* 		/\* for (idx = 0; idx < 12; idx++) { *\/ */
-		/* 		/\* 	SPI.transfer (0xff); *\/ */
-		/* 		/\* } *\/ */
-
-		/* 		SPI.transfer (0xe0); */
+		/* 		end_frame (); */
+		/* 		break; */
+		/* 	case 'z': */
+		/* 		SPI.transfer (0xf0); */
+		/* 		SPI.transfer (0x40); */
 		/* 		SPI.transfer (0x00); */
 		/* 		SPI.transfer (0x00); */
-		/* 		SPI.transfer (0xff); */
-
-		/* 		SPI.transfer (0xff); */
-		/* 		SPI.transfer (0xff); */
-		/* 		SPI.transfer (0xff); */
-		/* 		SPI.transfer (0xff); */
+		/* 		break; */
+		/* 	case 'c': */
+		/* 		SPI.transfer (0x00); */
+		/* 		SPI.transfer (0x00); */
+		/* 		SPI.transfer (0x00); */
+		/* 		SPI.transfer (0x00); */
+		/* 		break; */
 		/* 	} */
 		/* } */
 	}
-
-
-	/* for (int idx = 0; idx < 3; idx++) { */
-	/* 	  SPI.transfer (0xff); */
-	/* } */
-	/* SPI.transfer (0b11101111); */
-	/* SPI.transfer (0); */
-	/* SPI.transfer (0xff); */
-	/* SPI.transfer (0); */
-
-	/* for (int idx = 0; idx < 3; idx++) { */
-	/* 	  SPI.transfer (0xff); */
-	/* } */
-
-	/* SPI.transfer (0b11101111); */
-	/* SPI.transfer (0); */
-	/* SPI.transfer (0); */
-	/* SPI.transfer (0xff); */
-
-
-	// go through the six channels of the digital pot:
-	/* for (int channel = 0; channel < 6; channel++) { */
-	/*   // change the resistance on this channel from min to max: */
-	/*   for (int level = 0; level < 255; level++) { */
-	/*     digitalPotWrite(channel, level); */
-	/*     delay(10); */
-	/*   } */
-	/*   // wait a second at the top: */
-	/*   delay(100); */
-	/*   // change the resistance on this channel from max to min: */
-	/*   for (int level = 0; level < 255; level++) { */
-	/*     digitalPotWrite(channel, 255 - level); */
-	/*     delay(10); */
-	/*   } */
-	/* } */
-
-}
-
-void digitalPotWrite(int address, int value) {
-	// take the SS pin low to select the chip:
-	digitalWrite(slaveSelectPin, LOW);
-	//  send in the address and value via SPI:
-	SPI.transfer(address);
-	SPI.transfer(value);
-	// take the SS pin high to de-select the chip:
-	digitalWrite(slaveSelectPin, HIGH);
 }
