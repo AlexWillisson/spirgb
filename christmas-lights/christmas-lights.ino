@@ -2,9 +2,10 @@
 
 #define LED_COUNT 304
 
+int running;
+
 void clear_strand (void);
 void start_frame (void);
-void end_frame (void);
 void setup_frame (void);
 void setup_cylon (void);
 void step_cylon (void);
@@ -15,11 +16,12 @@ void
 setup (void)
 {
 	setup_cylon ();
-	/* setup_frame (); */
 	SPI.begin();
 	/* SPI.beginTransaction (SPISettings (1000000, MSBFIRST, SPI_MODE0)); */
 	Serial.begin (9600);
-	Serial.println ("init");
+	Serial.println ("init2");
+
+  running = 1;
 }
 
 void
@@ -40,15 +42,6 @@ void
 start_frame (void)
 {
 	SPI.transfer (0x00);
-	SPI.transfer (0x00);
-	SPI.transfer (0x00);
-	SPI.transfer (0x00);
-}
-
-void
-end_frame (void)
-{
-	SPI.transfer (0xe0);
 	SPI.transfer (0x00);
 	SPI.transfer (0x00);
 	SPI.transfer (0x00);
@@ -157,16 +150,15 @@ write_frame (void)
 	char buf[100];
 	int idx;
 
-	clear_strand ();
-
 	start_frame ();
 
 	for (idx = 0; frames[idx]; idx++) {
 		push_led (frames[idx]);
 	}
 
-	end_frame ();
 }
+
+int delay_count;
 
 void
 loop (void)
@@ -174,18 +166,30 @@ loop (void)
 	char c;
 	char buf[100];
 
+  if (running) {
+    delay_count++;
+    if (delay_count >= 1000) {
+        delay_count = 0;
+        step_cylon();
+        write_frame();
+    }
+  }
+  
 	if (Serial.available ()) {
 		c = Serial.read ();
 
 		switch (c) {
 		case 'x':
+      running = 0;
+      cylon_dir = 1;
+      cylon_eye = 1;
 			clear_strand ();
 			break;
 		case 'n':
-			write_frame ();
+      write_frame ();
 			break;
 		case 'c':
-			step_cylon ();
+      step_cylon ();
 			write_frame ();
 			break;
 		case 'z':
@@ -194,7 +198,13 @@ loop (void)
 		case 'v':
 			setup_cylon ();
 			break;
-		}
+    case 'r':
+      clear_strand ();
+      cylon_dir =1;
+      cylon_eye = 1;
+      running = 1;
+      break;
+    }
 
 		/* if (isxdigit (c)) { */
 		/* 	acc = ((acc << 4) | hexval (c)) & 0xff; */
